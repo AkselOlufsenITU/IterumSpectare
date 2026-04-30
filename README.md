@@ -1,6 +1,6 @@
-# IterumSpectare
-
-![IterumSpectare logo](./IterumSpectare_logo.png)
+<p align="center">
+  <img src="./IterumSpectare_logo.png" alt="IterumSpectare logo" width="420">
+</p>
 
 A lightweight TypeScript framework for recording initial state, user input batches, and logs for replayable interactive sessions.
 
