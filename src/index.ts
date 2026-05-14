@@ -3,7 +3,7 @@ import { LogLevelEnum } from './state.js'
 export * from './state.js'
 
 export type InitialRequest<GameStateType> = {
-    guid: string,
+    requestId: string,
     tick: number,
     initialState: GameStateType
 }
@@ -30,7 +30,7 @@ export class StateRecorder<GameStateType, UserInputType> {
   private logBuf: LogEntry[] = [];
   private initial: GameStateType | undefined = undefined;
   private guid: string | undefined = undefined;
-  private startedRemoteSession: boolean = false; 
+  private startedRemoteSession: boolean = false;
   private tick: number = 0; 
   private bufSize: number = 256;
   // Client is free to add any headers/auth logic/other tracking to the requests as needed 
@@ -57,11 +57,11 @@ export class StateRecorder<GameStateType, UserInputType> {
     });
   }
 
-  async RecordUserInput(input : UserInputType) : Promise<void> {
+  RecordUserInput(input : UserInputType) : void {
     this.buf.push({userInput: input, logEntries: this.logBuf});
     this.logBuf = [];
     if (this.buf.length >= this.bufSize) {
-        await this.Flush_it();
+        this.Flush_it();
     }
   }
 
@@ -69,24 +69,23 @@ export class StateRecorder<GameStateType, UserInputType> {
     return this.initial != undefined;
   }
 
-  Reset() : void {
-    this.Flush();
+  async Reset() : Promise<void> {
+    // Reset needs flush to complete before it does anything 
+    await this.Flush();
     this.initial = undefined;
-    this.buf = []
     this.guid = undefined;
     this.startedRemoteSession = false;
-    this.tick = 0; 
+    this.tick = 0;
   }
 
-  async Initialize(initialState: GameStateType) : Promise<string> {
+  Initialize(initialState: GameStateType) : void {
     console.log("initialize")
-    await this.Flush();
-    this.initial = initialState; 
-    this.buf = []; 
-    this.guid = crypto.randomUUID();
-    this.startedRemoteSession = false; 
-    console.log("guid: ", this.guid)
-    return this.guid; 
+    this.initial = initialState;
+    this.buf = [];
+    this.guid =  crypto.randomUUID();
+    this.startedRemoteSession = false;
+    this.Flush_it();
+    console.log("requestId: ", this.guid)
   }
 
   async Flush() : Promise<void> {
@@ -94,25 +93,34 @@ export class StateRecorder<GameStateType, UserInputType> {
     await this.Flush_it();
   }
 
+  /* 
+    When called synchronously, will execute up untill any async calls in sendInitialRequest/sendInProgressRequest, 
+    meaning the current state of the caller is bound in the request. 
+
+    However we need to make sure we reset bufs / set startedRemoteSession flags before this point 
+    
+  */
   private async Flush_it() : Promise<void> {
+    this.tick++;
     if (this.startedRemoteSession && this.guid) {
-        await this.sendInProgressRequest({
-          guid: this.guid, 
-          tick: this.tick, 
+        const request = {
+          guid: this.guid,
+          tick: this.tick - 1,
           userInputs: this.buf
-        });
-        this.buf = []; 
+        }
+        this.buf = [];
+        await this.sendInProgressRequest(request);
     } else if(this.initial && this.guid) {
-        const resp = await this.sendInitialRequest({
+        this.startedRemoteSession = true;
+        const serverUUID = await this.sendInitialRequest({
             initialState: this.initial,
-            tick: this.tick,
-            guid: this.guid
+            tick: this.tick - 1,
+            requestId: this.guid
         });
-        this.startedRemoteSession = true; 
+        this.guid = serverUUID;
     } else {
-        throw new Error(`Tried to flush without GUID:${this.guid} or initial state ${this.initial}!`);
+        throw new Error(`Tried to flush without requestId:${this.guid} or initial state ${this.initial}!`);
     }
-    this.tick++; 
   }
 }
 
@@ -121,7 +129,7 @@ export class StateRecorder<GameStateType, UserInputType> {
     Call into these methods at the end of whatever request pipeline you have 
 */
 export interface ServerAdapter<GameStateType, UserInputType> {
-    HandleInitialRequestAsync(req: InitialRequest<GameStateType>) : Promise<void>
+    HandleInitialRequestAsync(req: InitialRequest<GameStateType>) : Promise<string>
     HandleInProgressRequestAsync(req: InProgressRequest<UserInputType>) : Promise<void>
     GetStoredGame(guid: string) : Promise<{initial: GameStateType, inputs: UserInputType[]}>
 }

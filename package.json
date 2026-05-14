@@ -1,15 +1,10 @@
 {
-  "name": "iterumspectare",
+  "name": "bachelor",
   "version": "1.0.0",
-  "description": "A lightweight recording and replay persistence framework for interactive state changes.",
   "type": "module",
+  "files": ["dist"],
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "files": [
-    "dist",
-    "README.md",
-    "IterumSpectare_logo.png"
-  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -21,19 +16,8 @@
     }
   },
   "scripts": {
-    "build": "tsc",
-    "prepack": "npm run build"
+    "build": "tsc"
   },
-  "keywords": [
-    "state",
-    "recording",
-    "replay",
-    "sqlite"
-  ],
-  "engines": {
-    "node": ">=20"
-  },
-  "license": "MIT",
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
     "typescript": "~5.9.3"

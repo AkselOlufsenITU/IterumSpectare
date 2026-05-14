@@ -1,4 +1,5 @@
 import Database from 'better-sqlite3';
+import { randomUUID } from 'crypto';
 import type { ServerAdapter, InitialRequest, InProgressRequest } from '../index.js';
 
 export class SqliteAdapter<GameStateType, UserInputType> implements ServerAdapter<GameStateType, UserInputType> {
@@ -44,17 +45,25 @@ export class SqliteAdapter<GameStateType, UserInputType> implements ServerAdapte
         };
     }
 
-    async HandleInitialRequestAsync(req: InitialRequest<GameStateType>): Promise<void> {
+    private reqIDtoUUID = new Map<string, string> 
+    private UUIDtoReqID = new Map<string, string>
+
+    async HandleInitialRequestAsync(req: InitialRequest<GameStateType>): Promise<string> {
+        const guid = randomUUID();
 
         const insertSession = this.db.prepare(
             'INSERT INTO sessions (guid, initial_state) VALUES (?, ?)'
         );
 
         const tx = this.db.transaction(() => {
-            insertSession.run(req.guid, JSON.stringify(req.initialState));
+            insertSession.run(guid, JSON.stringify(req.initialState));
         });
 
         tx();
+
+        this.reqIDtoUUID.set(req.requestId, guid);
+        this.UUIDtoReqID.set(guid, req.requestId);
+        return guid;
     }
 
     GetSessions(): { guid: string; created_at: string }[] {
@@ -67,10 +76,32 @@ export class SqliteAdapter<GameStateType, UserInputType> implements ServerAdapte
         const insertInput = this.db.prepare(
             'INSERT INTO user_inputs (session_guid, input, batch_index, logs) VALUES (?, ?, ?, ?)'
         );
-
+        let uuid : string; 
+        // if this is the first time we see that the client uses our uuid rather than the req id 
+        const invalidReqID = this.UUIDtoReqID.get(req.guid);
+        if (invalidReqID) {
+            this.UUIDtoReqID.delete(req.guid);
+            this.reqIDtoUUID.delete(invalidReqID);
+            console.log(`Deleting ${invalidReqID}->${req.guid} and using ${req.guid}`)
+            uuid = req.guid;
+        } 
+        else  
+        {
+            // if this is a req-id and the client hasn't accepted our uuid yet
+            const correspondingUUID = this.reqIDtoUUID.get(req.guid)
+            if (correspondingUUID) {
+                console.log(`Using ${correspondingUUID} from ${req.guid}->${correspondingUUID}`)
+                uuid = correspondingUUID;
+            } 
+            else 
+            {
+                uuid = req.guid
+            }
+        }
+        console.log(`Using ${uuid}`)
         const tx = this.db.transaction(() => {
             for (let i = 0; i < req.userInputs.length; i++) {
-                insertInput.run(req.guid, JSON.stringify(req.userInputs[i]), req.tick, JSON.stringify(req.userInputs[i].logEntries));
+                insertInput.run(uuid, JSON.stringify(req.userInputs[i]), req.tick, JSON.stringify(req.userInputs[i].logEntries));
             }
         });
 
